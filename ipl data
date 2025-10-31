@@ -1,0 +1,140 @@
+#"What are the total number of matches won by each team in the dataset?"
+# 1. Import necessary libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Set visualization style
+sns.set_style('whitegrid')
+%matplotlib inline
+
+# --- 2. Data Loading ---
+try:
+    # Replace these paths with the actual location of your files
+    match_df = pd.read_csv('matches.csv')
+    delivery_df = pd.read_csv('deliveries.csv')
+    print("Data successfully loaded!")
+except FileNotFoundError:
+    print("Error: Make sure 'matches.csv' and 'deliveries.csv' are in the same directory.")
+    exit()
+
+# Initial Data Exploration
+print("\n--- Match Data Info ---")
+print(match_df.info())
+print("\n--- Delivery Data Info ---")
+print(delivery_df.info())
+
+
+# --- 3. Data Cleaning and Preprocessing ---
+
+# 3.1. Standardizing Team Names (A common issue in IPL datasets)
+# Replace older/inconsistent team names with current names
+team_mapping = {
+    'Delhi Daredevils': 'Delhi Capitals',
+    'Deccan Chargers': 'Sunrisers Hyderabad',
+    'Rising Pune Supergiant': 'Rising Pune Supergiants',
+    'Pune Warriors': 'Rising Pune Supergiants', # Grouping Pune teams for simplicity
+    'Gujarat Lions': 'Gujarat Titans', # Grouping for historical comparison
+}
+
+# Apply mapping to relevant columns in match_df
+cols_to_map = ['team1', 'team2', 'toss_winner', 'winner']
+for col in cols_to_map:
+    match_df[col] = match_df[col].replace(team_mapping)
+
+# Apply mapping to relevant columns in delivery_df
+delivery_df['batting_team'] = delivery_df['batting_team'].replace(team_mapping)
+delivery_df['bowling_team'] = delivery_df['bowling_team'].replace(team_mapping)
+
+# 3.2. Handling Missing Values (Example: 'city' and 'player_of_match')
+# Filling missing 'city' values based on 'venue'
+match_df['city'] = match_df.apply(lambda row: row['venue'].split(' ')[0] if pd.isnull(row['city']) else row['city'], axis=1)
+
+# Drop matches with still-missing 'winner' or 'player_of_match' (usually rain-affected/no result)
+match_df.dropna(subset=['winner', 'player_of_match'], inplace=True)
+
+
+# --- 4. Exploratory Data Analysis (EDA) & Insights ---
+
+# 4.1. Most Successful Teams (Number of wins)
+print("\n--- 4.1 Most Successful Teams ---")
+win_counts = match_df['winner'].value_counts()
+print(win_counts)
+
+plt.figure(figsize=(10, 6))
+sns.barplot(y=win_counts.index, x=win_counts.values, palette="viridis")
+plt.title('Total Matches Won by Each Team ')
+plt.xlabel('Number of Wins')
+plt.ylabel('Team')
+plt.show()
+
+# 4.2. Venue Analysis (Most matches hosted)
+print("\n--- 4.2 Matches Hosted by Venue ---")
+venue_counts = match_df['venue'].value_counts().head(10)
+print(venue_counts)
+
+plt.figure(figsize=(10, 6))
+sns.barplot(y=venue_counts.index, x=venue_counts.values, palette="rocket")
+plt.title('Top 10 Venues by Number of Matches Hosted')
+plt.xlabel('Matches Hosted')
+plt.ylabel('Venue')
+plt.show()
+
+
+# --- 5. Merging DataFrames for Deep Dive Analysis ---
+
+# Merge the two dataframes on 'match_id'
+full_df = pd.merge(match_df, delivery_df, left_on='id', right_on='match_id')
+print("\n--- Full Dataframe Merged ---")
+print(full_df.shape)
+
+
+# --- 6. Advanced Batting Analysis ---
+
+# 6.1. Top Run Scorers (Overall)
+print("\n--- 6.1 Top 10 Batsmen by Total Runs ---")
+# Group by 'batsman' and sum 'batsman_runs'
+batsman_runs = full_df.groupby('batter')['batsman_runs'].sum().sort_values(ascending=False).head(10)
+print(batsman_runs)
+
+plt.figure(figsize=(10, 6))
+sns.barplot(y=batsman_runs.index, x=batsman_runs.values, palette="cubehelix")
+plt.title('Top 10 All-Time IPL Run Scorers')
+plt.xlabel('Total Runs')
+plt.ylabel('Batsman')
+plt.show()
+
+# 6.2. Batting Strike Rate (Min 500 balls faced)
+min_balls = 500
+balls_faced = full_df.groupby('batter')['ball'].count()
+runs_scored = full_df.groupby('batter')['batsman_runs'].sum()
+
+# Create a strike rate DataFrame for qualified players
+sr_df = pd.DataFrame({
+    'Runs': runs_scored,
+    'Balls': balls_faced,
+})
+sr_df = sr_df[sr_df['Balls'] >= min_balls]
+sr_df['Strike Rate'] = (sr_df['Runs'] / sr_df['Balls']) * 100
+top_sr = sr_df['Strike Rate'].sort_values(ascending=False).head(10)
+
+print("\n--- 6.2 Top 10 Batting Strike Rates (Min 500 Balls) ---")
+print(top_sr)
+
+
+# --- 7. Bowling Analysis ---
+
+# 7.1. Most Wickets Takers
+print("\n--- 7.1 Top 10 Wicket Takers ---")
+# Exclude Run Out dismissals as they are not attributed to the bowler
+wickets = delivery_df[delivery_df['dismissal_kind'].isin(['caught', 'bowled', 'lbw', 'stumped', 'caught and bowled', 'hit wicket'])]
+bowler_wickets = wickets.groupby('bowler')['dismissal_kind'].count().sort_values(ascending=False).head(10)
+print(bowler_wickets)
+
+plt.figure(figsize=(10, 6))
+sns.barplot(y=bowler_wickets.index, x=bowler_wickets.values, palette="mako")
+plt.title('Top 10 All-Time IPL Wicket Takers ')
+plt.xlabel('Total Wickets')
+plt.ylabel('Bowler')
+plt.show()
